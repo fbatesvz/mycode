@@ -1,0 +1,208 @@
+---
+- name: Another network playbook example
+  # The line below uses regex to parse the inventory file
+  hosts: ~^arista
+  # gather_facts ALWAYS runs setup.py (server module)
+  gather_facts: no # v2.5=< no is default if network_cli is selected for connection
+                   # if turned to yes you'll collect info about the local host :(
+
+  tasks:
+  # if we run this and have gather_facts set to no, then ansible_facts will be about our network devs
+  - name: Harvest Arista facts
+    eos_facts:
+    when: ansible_network_os == 'eos'
+
+  - name: Push to the local system -- by special tag request only 
+    copy:
+      # use the to_nice_json filter to display pretty json output
+      content: "{{ ansible_facts | to_nice_json }}"
+      dest: "/home/student/mycode/{{ inventory_hostname }}.txt"
+      # the inventory_hostname variable always resolves to the current host being iterated against
+    tags:
+      - never
+      - grabfacts
+
+    # dig into the data we want to reveal
+  - name: Getting at network interfaces
+    debug:
+     var: ansible_facts.net_interfaces
+
+Save and exit.
+
+Run the new playbook. it should display 13 interfaces for each switch. The copy module should not runt, as it is tagged with a special tag called never. This prevents a module from running unless it is specifically called by the second tag included in the tags section (in this case, grabfacts).
+
+student@beachhead:~/mycode$ ansible-playbook precheck/precheck02.yml
+
+Great. So we’re going to make another iteration to our playbook. This time, we’re going to try to ‘count’ the number of interfaces that we are shown. We can do this with the jinja2 filter called, length. Let’s try that by creating a new playbook.
+
+student@beachhead:~/mycode$ vim precheck/precheck03.yml
+
+Copy and paste the following into your new playbook.
+
+---
+- name: Another network playbook example
+  # The line below uses regex to parse the inventory file
+  hosts: ~^arista
+  # gather_facts ALWAYS runs setup.py (server module)
+  gather_facts: no # v2.5=< no is default if network_cli is selected for connection
+                   # if turned to yes you'll collect info about the local host :(
+
+  tasks:
+  # if we run this and have gather_facts set to no, then ansible_facts will be about our network devs
+  - name: Harvest Arista facts
+    eos_facts:
+    when: ansible_network_os == 'eos'
+
+  - name: Push to the local system -- by special tag request only 
+    copy:
+      # use the to_nice_json filter to display pretty json output
+      content: "{{ ansible_facts | to_nice_json }}"
+      dest: "/home/student/mycode/{{ inventory_hostname }}.txt"
+      # the inventory_hostname variable always resolves to the current host being iterated against
+    tags:
+      - never
+      - grabfacts
+
+    # dig into the data we want to reveal
+  - name: Getting at network interfaces
+    debug:
+     # filters require that we start using mustache brackets surrounded in quotes
+     var: "{{ ansible_facts.net_interfaces | length }}"
+
+Save and exit.
+
+Run the new playbook, and we should get 13, or the number of interfaces present on the switch.
+
+student@beachhead:~/mycode$ ansible-playbook precheck/precheck03.yml
+
+Great! Now we’re getting somewhere. Finally, let’s build a conditional around this.
+
+student@beachhead:~/mycode$ vim precheck/precheck04.yml
+
+Copy and paste the following into your new playbook.
+
+---
+- name: Another network playbook example
+  # The line below uses regex to parse the inventory file
+  hosts: ~^arista
+  # gather_facts ALWAYS runs setup.py (server module)
+  gather_facts: no # v2.5=< no is default if network_cli is selected for connection
+                   # if turned to yes you'll collect info about the local host :(
+
+  tasks:
+  # if we run this and have gather_facts set to no, then ansible_facts will be about our network devs
+  - name: Harvest Arista facts
+    eos_facts:
+    when: ansible_network_os == 'eos'
+
+  - name: Push to the local system -- by special tag request only 
+    copy:
+      # use the to_nice_json filter to display pretty json output
+      content: "{{ ansible_facts | to_nice_json }}"
+      dest: "/home/student/mycode/{{ inventory_hostname }}.txt"
+      # the inventory_hostname variable always resolves to the current host being iterated against
+    tags:
+      - never
+      - grabfacts
+
+    # Precheck conditional number of interfaces
+  - fail:
+      msg: "FAIL. Network device lacks the correct number of interfaces."
+    when: ansible_facts.net_interfaces|length != 13
+
+Save and exit.
+
+Run the new playbook. Our switches have the correct number of interfaces, so the fail task should be skipped.
+
+student@beachhead:~/mycode$ ansible-playbook precheck/precheck04.yml
+
+Let’s add one more conditional. Review the harvest facts from the switches. Look near the bottom at a value called, net_version. It should be set to something like 4.17.8M. Let’s build a test around this.
+
+student@beachhead:~/mycode$ vim precheck/precheck05.yml
+
+Copy and paste the following into your new playbook.
+
+---
+- name: Another network playbook example
+  # The line below uses regex to parse the inventory file
+  hosts: ~^arista
+  # gather_facts ALWAYS runs setup.py (server module)
+  gather_facts: no # v2.5=< no is default if network_cli is selected for connection
+                   # if turned to yes you'll collect info about the local host :(
+
+  tasks:
+  # if we run this and have gather_facts set to no, then ansible_facts will be about our network devs
+  - name: Harvest Arista facts
+    eos_facts:
+    when: ansible_network_os == 'eos'
+
+  - name: Push to the local system -- by special tag request only 
+    copy:
+      # use the to_nice_json filter to display pretty json output
+      content: "{{ ansible_facts | to_nice_json }}"
+      dest: "/home/student/mycode/{{ inventory_hostname }}.txt"
+      # the inventory_hostname variable always resolves to the current host being iterated against
+    tags:
+      - never
+      - grabfacts
+
+    # Precheck conditional number of interfaces
+  - fail:
+      msg: "FAIL. Network device lacks the correct number of interfaces."
+    when: ansible_facts.net_interfaces|length != 13
+
+    # Firmware precheck on correct major and minor versions
+  - fail:
+      msg: "FAIL. Network device is running wrong firmware."
+    when: "'4.17' not in ansible_facts.net_version"
+
+Save and exit.
+
+Run the new playbook. Our switches have the correct number of interfaces, as well as a passing fimrware, so both fail tasks should be skipped.
+
+student@beachhead:~/mycode$ ansible-playbook precheck/precheck05.yml
+
+So we have a playbook that is looking fairly sharp. Let’s make a final iteration, and replace all our conditionals with variables mapped at the top of our file.
+
+student@beachhead:~/mycode$ vim precheck/precheck06.yml
+
+Copy and paste the following into your new playbook.
+
+---
+- name: Another network playbook example
+  # The line below uses regex to parse the inventory file
+  hosts: ~^arista
+  # gather_facts ALWAYS runs setup.py (server module)
+  gather_facts: no # v2.5=< no is default if network_cli is selected for connection
+                   # if turned to yes you'll collect info about the local host :(
+
+  vars:
+    switchint: 13
+    switchver: "4.17"
+
+  tasks:
+  # if we run this and have gather_facts set to no, then ansible_facts will be about our network devs
+  - name: Harvest Arista facts
+    eos_facts:
+    when: ansible_network_os == 'eos'
+
+  - name: Push to the local system -- by special tag request only 
+    copy:
+      # use the to_nice_json filter to display pretty json output
+      content: "{{ ansible_facts | to_nice_json }}"
+      dest: "/home/student/mycode/{{ inventory_hostname }}.txt"
+      # the inventory_hostname variable always resolves to the current host being iterated against
+    tags:
+      - never
+      - grabfacts
+
+    # Precheck conditional number of interfaces
+  - fail:
+      msg: "FAIL. Network device lacks the correct number of interfaces."
+    when: ansible_facts.net_interfaces|length != switchint
+
+    # Firmware precheck on correct major and minor versions
+  - fail:
+      msg: "FAIL. Network device is running wrong firmware."
+    when: "switchver not in ansible_facts.net_version"
+    
