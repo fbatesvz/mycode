@@ -1,0 +1,15 @@
+---
+-  Name:  My primary ansile book
+   hosts: localhost
+
+   task:
+   -  name: Echo something
+     shell: 
+     cli_command
+       command: echo "something" >> {{ansible_ssh_user}}/myfile.txt 
+       command: echo "something" >>{{ansible_ssh_user}}/myfile.txt
+
+       #print out results
+    -  name: 
+       debug:
+         var: results  
